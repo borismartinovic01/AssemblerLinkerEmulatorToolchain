@@ -1,0 +1,196 @@
+%{
+    #include <cstdio>
+    #include <iostream>
+    #include <vector>
+    #include "../inc/structsDefs.hpp"
+	
+    extern int yylex();
+    extern int yyparse();
+    extern void yylex_destroy();
+    extern FILE *yyin;
+    extern int counter;
+ 
+    void yyerror(std::vector<Line>& lines, const char *s);
+%}
+%union {
+    SymbolsList symbols;
+    char* swrd;
+    int literal;
+    Operand operand;
+    int reg;
+    char* label;
+    Directive directive;
+    Instruction instruction;
+    char* str;
+}
+%token <swrd> SWRD
+%token <literal> LITERAL
+%token <reg> REG
+%token <label> LABEL
+%token <str> STRING
+%token PLUS
+%token DOLLAR
+%token LBRACKET
+%token RBRACKET
+%token COMMA
+%token COMMENT
+%token ENDL
+%token I_HALT
+%token I_INT
+%token I_IRET
+%token I_CALL
+%token I_RET
+%token I_JMP
+%token I_BEQ
+%token I_BNE
+%token I_BGT
+%token I_PUSH
+%token I_POP
+%token I_XCHG
+%token I_ADD
+%token I_SUB
+%token I_MUL
+%token I_DIV
+%token I_NOT
+%token I_AND
+%token I_OR
+%token I_XOR
+%token I_SHL
+%token I_SHR
+%token I_LD
+%token I_ST
+%token I_CSRRD
+%token I_CSRWR
+%token D_GLOBAL
+%token D_EXTERN
+%token D_SECTION
+%token D_WORD
+%token D_SKIP
+%token D_END
+%type <symbols> symbolsList
+%type <operand> opaddr
+%type <operand> opdata
+%type <directive> directive
+%type <instruction> instruction
+%parse-param {std::vector<Line>& lines}
+%%
+lines: lines line | line;
+line:
+      LABEL ENDL                                { Line l; l.type = LIGNORE; l.label = $1; lines.push_back(l);                        }
+    | LABEL instruction ENDL                    { Line l; l.type = LINSTRUCTION; l.label = $1; l.data.ins = $2; lines.push_back(l);        }
+    | LABEL directive ENDL                      { Line l; l.type = LDIRECTIVE; l.label = $1; l.data.dir = $2; lines.push_back(l);        }
+    | LABEL instruction COMMENT ENDL            { Line l; l.type = LINSTRUCTION; l.label = $1; l.data.ins = $2; lines.push_back(l);        }
+    | LABEL directive COMMENT ENDL              { Line l; l.type = LDIRECTIVE; l.label = $1; l.data.dir = $2; lines.push_back(l);        }
+    | LABEL COMMENT ENDL                        { Line l; l.type = LIGNORE; l.label = $1; lines.push_back(l);                        }
+    | instruction ENDL                          { Line l; l.type = LINSTRUCTION; l.label = nullptr; l.data.ins = $1; lines.push_back(l);   }
+    | directive ENDL                            { Line l; l.type = LDIRECTIVE; l.label = nullptr; l.data.dir = $1; lines.push_back(l);   }
+    | instruction COMMENT ENDL                  { Line l; l.type = LINSTRUCTION; l.label = nullptr; l.data.ins = $1; lines.push_back(l);   }
+    | directive COMMENT ENDL                    { Line l; l.type = LDIRECTIVE; l.label = nullptr; l.data.dir = $1; lines.push_back(l);   }
+    | COMMENT ENDL                              ;
+    | ENDL                                      ;
+    ;
+instruction:
+	I_HALT				{$$.type = HALT;}
+   | I_INT 				{$$.type = INT;}
+   | I_IRET				{$$.type = IRET;}
+   | I_CALL opaddr		{$$.type = CALL; $$.regD = 15; $$.regS = 15; $$.operand = $2;}
+   | I_RET                {$$.type = RET; $$.regD = 15; $$.regS = 14;}
+   | I_JMP opaddr         {$$.type = JMP; $$.regD = 15; $$.regS = 15; $$.operand = $2;}
+   | I_BEQ REG COMMA REG COMMA opaddr         {$$.type = BEQ; $$.regD = $2; $$.regS = $4; $$.operand = $6;}
+   | I_BNE REG COMMA REG COMMA opaddr         {$$.type = BNE; $$.regD = $2; $$.regS = $4; $$.operand = $6;}
+   | I_BGT REG COMMA REG COMMA opaddr         {$$.type = BGT; $$.regD = $2; $$.regS = $4; $$.operand = $6;}
+   | I_PUSH REG           { $$.type = PUSH; $$.regD = $2; $$.regS = 14;}
+   | I_POP REG            { $$.type = POP; $$.regD = $2; $$.regS = 14;}
+   | I_XCHG REG COMMA REG { $$.type = XCHG; $$.regD = $2; $$.regS = $4;}
+   | I_ADD REG COMMA REG { $$.type = ADD; $$.regD = $2; $$.regS = $4;}
+   | I_SUB REG COMMA REG { $$.type = SUB; $$.regD = $2; $$.regS = $4;}
+   | I_MUL REG COMMA REG { $$.type = MUL; $$.regD = $2; $$.regS = $4;}
+   | I_DIV REG COMMA REG { $$.type = DIV; $$.regD = $2; $$.regS = $4;}
+   | I_NOT REG                       { $$.type = NOT; $$.regD = $2;}
+   | I_AND REG COMMA REG             { $$.type = AND; $$.regD = $2; $$.regS = $4;}
+   | I_OR REG COMMA REG              { $$.type = OR; $$.regD = $2; $$.regS = $4;}
+   | I_XOR REG COMMA REG             { $$.type = XOR; $$.regD = $2; $$.regS = $4;}
+   | I_SHL REG COMMA REG             { $$.type = SHL; $$.regD = $2; $$.regS = $4;}
+   | I_SHR REG COMMA REG             { $$.type = SHR; $$.regD = $2; $$.regS = $4;}
+   | I_LD opdata COMMA REG    { $$.type = LD; $$.regD = $4; $$.regS = 15; $$.operand = $2;}
+   | I_ST REG COMMA opdata    { $$.type = ST; $$.regD = $2; $$.regS = 15; $$.operand = $4;}
+   | I_CSRRD REG COMMA REG    { $$.type = CSRRD; $$.regD = $4; $$.regS = $2;}
+   | I_CSRWR REG COMMA REG    { $$.type = CSRWR; $$.regD = $4; $$.regS = $2;}
+   ;
+directive:
+	D_GLOBAL symbolsList	{$$.type = GLOBAL; $$.symbolsList = $2;}
+   | D_EXTERN symbolsList	{$$.type = EXTERN; $$.symbolsList = $2;}
+   | D_SECTION SWRD			{$$.type = SECTION; $$.swrd = $2;}
+   | D_WORD symbolsList		{$$.type = WORD; $$.symbolsList = $2;}
+   | D_SKIP LITERAL			{$$.type = SKIP; $$.literal = $2;}
+   | D_END					{$$.type = END;}
+   ;
+opdata:
+      DOLLAR LITERAL                        { $$.type = IMMED; $$.literal = $2; $$.swrd = nullptr;}
+    | DOLLAR SWRD                            { $$.type = IMMED; $$.swrd = $2;}   
+    | LITERAL                               { $$.type = MEM; $$.literal = $1; $$.swrd = nullptr;}
+	| SWRD                                   { $$.type = MEM; $$.swrd = $1;} 
+    | REG                           { $$.type = REGDIR; $$.reg = $1;}
+    | LBRACKET REG RBRACKET         { $$.type = REGIND; $$.reg = $2;}
+    | LBRACKET REG PLUS LITERAL RBRACKET     { $$.type = REGINDPOM; $$.reg = $2; $$.literal = $4; $$.swrd = nullptr;}
+    | LBRACKET REG PLUS SWRD RBRACKET        { $$.type = REGINDPOM; $$.reg = $2; $$.swrd = $4;}               
+    ;
+opaddr:
+      LITERAL                               { $$.type = IMMED; $$.literal = $1; $$.swrd = nullptr;}
+    | SWRD                                  { $$.type = IMMED; $$.swrd = $1;}
+    ;
+symbolsList:
+	symbolsList COMMA SWRD{
+		$$.length = $1.length + 1;
+		$$.symbolsList = (SymbolListElement*)realloc($1.symbolsList, $$.length * sizeof(SymbolListElement));
+		if($$.symbolsList != NULL){
+            $$.symbolsList[$$.length - 1].type = SSWRD;
+			$$.symbolsList[$$.length - 1].data.swrd = $3;
+		}
+		else{
+			free($1.symbolsList);
+		}
+	}
+  | symbolsList COMMA LITERAL{
+  		$$.length = $1.length + 1;
+		$$.symbolsList = (SymbolListElement*)realloc($1.symbolsList, $$.length * sizeof(SymbolListElement));
+		if($$.symbolsList == NULL){
+            $$.symbolsList[$$.length - 1].type = SLITERAL;
+			$$.symbolsList[$$.length - 1].data.literal = $3;
+		}
+		else{
+			free($1.symbolsList);
+		}
+  	}
+  | SWRD{
+  		$$.length = 1;
+		$$.symbolsList = (SymbolListElement*)malloc(sizeof(SymbolListElement));
+		if($$.symbolsList != NULL){
+			$$.symbolsList[0].type = SSWRD;
+			$$.symbolsList[0].data.swrd = $1;
+		}
+  	}
+  | LITERAL{
+  		$$.length = 1;
+		$$.symbolsList = (SymbolListElement*)malloc(sizeof(SymbolListElement));
+		if($$.symbolsList != NULL){
+			$$.symbolsList[0].type = SLITERAL;
+			$$.symbolsList[0].data.literal = $1;
+		}
+  	}
+  ;
+%%
+#ifdef DEBUG_SYNTAX
+int main(int argc, char *argv[]) {
+    
+    yyin = file;
+    std::vector<Line> lines;
+    int result = yyparse(lines);
+    yylex_destroy();
+    fclose(file);
+
+    if(result == 0) cout << "Parsing successful\n";
+    else cout << "Error while parsing\n";
+}
+
+#endif
